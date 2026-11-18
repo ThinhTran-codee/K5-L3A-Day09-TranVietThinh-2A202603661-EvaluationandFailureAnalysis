@@ -8,32 +8,54 @@ Reference values to self-check are in tests/test_lab9_stats.py.
 from __future__ import annotations
 
 from collections.abc import Sequence
+import math
 
 POS = "FAIL"   # the judge's job is to FIND failures, so FAIL is the positive class
 
 
 def confusion(human: Sequence[str], judge: Sequence[str]) -> dict[str, int]:
     """tp/fp/fn/tn with FAIL as positive."""
-    # TODO M2
-    raise NotImplementedError
+    tp = sum(1 for h, j in zip(human, judge) if h == POS and j == POS)
+    fp = sum(1 for h, j in zip(human, judge) if h != POS and j == POS)
+    fn = sum(1 for h, j in zip(human, judge) if h == POS and j != POS)
+    tn = sum(1 for h, j in zip(human, judge) if h != POS and j != POS)
+    return {"tp": tp, "fp": fp, "fn": fn, "tn": tn}
 
 
 def precision_recall(human: Sequence[str], judge: Sequence[str]) -> tuple[float, float]:
-    # TODO M2: precision = tp/(tp+fp), recall = tp/(tp+fn); return 0.0 when the denominator is 0
-    raise NotImplementedError
+    """precision = tp/(tp+fp), recall = tp/(tp+fn); return 0.0 when the denominator is 0."""
+    cm = confusion(human, judge)
+    tp, fp, fn = cm["tp"], cm["fp"], cm["fn"]
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    return (precision, recall)
 
 
 def cohen_kappa(human: Sequence[str], judge: Sequence[str]) -> float:
     """kappa = (p_o - p_e) / (1 - p_e). Raise ValueError when undefined (p_e == 1):
     a constant judge has no signal and must FAIL calibration, not pass on a technicality."""
-    # TODO M2
-    raise NotImplementedError
+    n = len(human)
+    if n == 0 or len(judge) != n:
+        raise ValueError("human and judge sequences must be non-empty and of same length")
+    p_o = sum(1 for h, j in zip(human, judge) if h == j) / n
+    categories = set(human) | set(judge)
+    p_e = 0.0
+    for c in categories:
+        p_h = sum(1 for h in human if h == c) / n
+        p_j = sum(1 for j in judge if j == c) / n
+        p_e += p_h * p_j
+    if abs(1.0 - p_e) < 1e-12:
+        raise ValueError("Cohen's kappa undefined when p_e == 1.0 (constant judge)")
+    return (p_o - p_e) / (1.0 - p_e)
 
 
 def rogan_gladen(observed_rate: float, sensitivity: float, specificity: float) -> float:
     """Correct an observed failure rate for judge error; clip to [0, 1]."""
-    # TODO M2: (p_obs + spec - 1) / (sens + spec - 1)
-    raise NotImplementedError
+    denom = sensitivity + specificity - 1.0
+    if abs(denom) < 1e-12:
+        return 0.0
+    val = (observed_rate + specificity - 1.0) / denom
+    return float(max(0.0, min(1.0, val)))
 
 
 def paired_bootstrap(a: Sequence[float], b: Sequence[float], *, n_resamples: int = 1000,
@@ -41,20 +63,41 @@ def paired_bootstrap(a: Sequence[float], b: Sequence[float], *, n_resamples: int
     """a[i], b[i] = per-item mean over seeds, SAME items, SAME order.
     Return (mean(a)-mean(b), lo, hi) with scipy.stats.bootstrap(paired=True, method="percentile",
     rng=numpy.random.default_rng(rng)). If a == b everywhere return (0.0, 0.0, 0.0)."""
-    # TODO M4
-    raise NotImplementedError
+    import numpy as np
+    from scipy.stats import bootstrap
+
+    if list(a) == list(b):
+        return (0.0, 0.0, 0.0)
+
+    diff = float(np.mean(a) - np.mean(b))
+    res = bootstrap(
+        (a, b),
+        statistic=lambda x, y: np.mean(x, axis=-1) - np.mean(y, axis=-1),
+        paired=True,
+        n_resamples=n_resamples,
+        random_state=np.random.default_rng(rng),
+        method="percentile",
+        confidence_level=confidence,
+    )
+    return (diff, float(res.confidence_interval.low), float(res.confidence_interval.high))
 
 
 def pass_at_k(n: int, c: int, k: int) -> float:
     """Probability that AT LEAST ONE of k trials drawn from n (c of them passing) passes.
     Unbiased estimator (Chen et al. 2021): 1 - C(n-c, k) / C(n, k). Raise ValueError if k > n."""
-    # TODO M6
-    raise NotImplementedError
+    if k > n or k <= 0 or n <= 0 or c < 0 or c > n:
+        raise ValueError(f"Invalid arguments for pass_at_k: n={n}, c={c}, k={k}")
+    if n - c < k:
+        return 1.0
+    return 1.0 - math.comb(n - c, k) / math.comb(n, k)
 
 
 def pass_hat_k(n: int, c: int, k: int) -> float:
     """pass^k (tau-bench, Yao et al. 2024): probability that ALL k trials drawn from n pass.
     Unbiased estimator: C(c, k) / C(n, k). Raise ValueError if k > n.
     pass^k <= pass@1 <= pass@k; a reliable agent keeps pass^k close to pass@1."""
-    # TODO M6
-    raise NotImplementedError
+    if k > n or k <= 0 or n <= 0 or c < 0 or c > n:
+        raise ValueError(f"Invalid arguments for pass_hat_k: n={n}, c={c}, k={k}")
+    if c < k:
+        return 0.0
+    return math.comb(c, k) / math.comb(n, k)
