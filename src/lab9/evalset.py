@@ -50,10 +50,9 @@ CLAIM_FM_MAP: dict[str, list[str]] = {
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-
 def sha12(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()[:12]
-
+    content = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(content).hexdigest()[:12]
 
 def build(source: Path = SOURCE) -> tuple[int, int]:
     claims = load_jsonl(source)
